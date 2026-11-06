@@ -117,7 +117,7 @@ Combined with the successful alternative DNS query during the incident, this sup
 | `ipconfig /all` | DNS set to 192.0.2.1 | Incorrect DNS configuration identified |
 | Default `nslookup` | Timed out | Configured resolver not responding |
 | `nslookup` using 8.8.8.8 | Successful | Alternative DNS resolution functional |
-| External TCP test | Successful at baseline | External TCP connectivity established before fault |
+| `Test-NetConnection 1.1.1.1 -Port 443` | Successful at baseline | External TCP connectivity established before fault |
 
 ## Root Cause
 
