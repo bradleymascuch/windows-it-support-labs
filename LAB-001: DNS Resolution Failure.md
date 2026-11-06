@@ -167,4 +167,4 @@ The incident was resolved without changing the workstation's IP addressing or de
 
 This was a controlled troubleshooting exercise performed in a Windows 11 VirtualBox environment.
 
-The DNS misconfiguration was deliberately introduced for training purposes. The exercise demonstrates practical diagnostic methods and recovery procedures, not experience resolving a production incident.
+The DNS misconfiguration was deliberately introduced for training purposes. The exercise demonstrates practical diagnostic methods and recovery procedures.
