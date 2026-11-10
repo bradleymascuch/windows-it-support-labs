@@ -1,119 +1,81 @@
-LAB-002 — Windows Server 2025 Active Directory Deployment
+# Windows IT Support & System Administration Labs
 
-Category: Windows Server / Active Directory / Systems Administration
-Status: In Progress
-Environment: Oracle VirtualBox, Windows Server 2025, Windows 11 Enterprise
+## Overview
 
-1. Project Overview
+This repository documents my hands-on training in Windows troubleshooting, networking, Active Directory, and system administration.
 
-This lab documents the deployment and configuration of an Active Directory environment using Windows Server 2025 and Oracle VirtualBox.
+I hold a B.S. in Cybersecurity and Information Assurance, along with CompTIA Security+, Network+, and Project+ certifications.
 
-The objective is to develop practical skills in Windows Server administration, Active Directory Domain Services (AD DS), DNS, network configuration, and troubleshooting.
+My objective is to develop practical IT support skills through simulated incidents, systematic troubleshooting, infrastructure deployment, and documented resolutions, while progressively building toward Windows system administration.
 
-The environment is designed to support progressively more advanced exercises involving domain-joined workstations, user and group administration, Group Policy, and PowerShell automation.
+## Lab Environment
 
-2. Lab Architecture
+- **Virtualization:** Oracle VirtualBox
+- **Operating Systems:** Windows 11 Enterprise, Windows Server 2025
+- **Networking:** VirtualBox NAT and host-only networks
+- **Infrastructure:** Active Directory Domain Services, Windows DNS
+- **Tools:** PowerShell, Windows administrative utilities, and built-in diagnostic tools
 
-The environment consists of a Windows Server 2025 domain controller and a Windows 11 Enterprise client virtual machine.
+## Lab Projects
 
-Infrastructure
+### LAB-001 — DNS Resolution Failure
 
-Component
+**Category:** Windows Networking / IT Support Troubleshooting
 
-Configuration
+Investigated and resolved a simulated DNS resolution failure caused by an intentionally misconfigured DNS server.
 
-Hypervisor
+**Skills demonstrated:**
 
-Oracle VirtualBox 7.2
+- IPv4 addressing, DHCP, and DNS configuration
+- Comparing default DNS resolution with direct queries
+- Distinguishing network connectivity from name resolution
+- PowerShell-based diagnostics and remediation
+- Post-remediation verification
 
-Domain Controller
+[View LAB-001](<LAB-001: DNS Resolution Failure.md>)
 
-DC01
+### LAB-002 — Windows Server 2025 Active Directory Deployment
 
-Server OS
+**Category:** Windows Server / Systems Administration
 
-Windows Server 2025 Standard Evaluation
+**Status:** In Progress
 
-Active Directory Domain
+Deploying a Windows Server 2025 Active Directory environment in VirtualBox to develop practical skills in domain administration, network services, and infrastructure troubleshooting.
 
-lab.test
+**Completed work:**
 
-NetBIOS Domain
+- Windows Server 2025 installation and configuration
+- NAT and host-only virtual networking
+- Static IPv4 configuration
+- Active Directory Domain Services installation
+- Creation of the `lab.test` forest
+- Domain controller and DNS service verification
 
-LAB
+**Current troubleshooting:** Resolving unwanted DNS registration on a multihomed domain controller.
 
-Client OS
+**Planned work:**
 
-Windows 11 Enterprise
+- Windows 11 domain joining
+- Active Directory users, groups, and organizational units
+- Group Policy configuration
+- Authentication and connectivity troubleshooting
+- PowerShell administration
 
-Internal Network
+[View LAB-002](LAB-002-Active-Directory/README.md)
 
-192.168.56.0/24
+## Planned Learning Areas
 
-DC01 Internal IP
+- Windows services, Event Viewer, and system diagnostics
+- Local and domain user administration
+- File permissions and access management
+- Microsoft Entra ID fundamentals
+- User onboarding and offboarding workflows
+- PowerShell scripting and automation
 
-192.168.56.10
+## Documentation Approach
 
-DC01 NAT IP
+Each lab documents its objectives, environment, implementation, diagnostic methodology, verification, and lessons learned.
 
-10.0.2.15
+Configuration commands, technical explanations, and supporting screenshots are included where relevant.
 
-Internal DNS
-
-192.168.56.10
-
-Network Design
-
-DC01 uses two virtual network adapters:
-
-Adapter 1 — NAT
-
-Provides outbound network connectivity through VirtualBox.
-
-Adapter 2 — Host-only
-
-Provides communication between the domain controller and lab client systems on an isolated virtual network.
-
-The host-only interface is configured with a static IPv4 address of 192.168.56.10/24, without a default gateway.
-
-The domain controller hosts DNS for the lab.test Active Directory domain.
-
-3. Implementation
-
-The following sections will document the completed deployment stages, configuration commands, and verification evidence.
-
-3.1 Windows Server Installation
-
-Documentation pending.
-
-3.2 Network Configuration
-
-Documentation pending.
-
-3.3 Active Directory Domain Services Installation
-
-Documentation pending.
-
-3.4 Domain Controller Verification
-
-Documentation pending.
-
-3.5 DNS Configuration and Troubleshooting
-
-In progress.
-
-4. Planned Administration Exercises
-
-Windows 11 domain joining
-
-Active Directory users, groups, and organizational units
-
-Group Policy configuration and troubleshooting
-
-Domain authentication and connectivity diagnostics
-
-PowerShell administration and automation
-
-5. Lessons Learned
-
-To be completed as the project progresses.
+All incidents are simulated training exercises unless otherwise specified.
