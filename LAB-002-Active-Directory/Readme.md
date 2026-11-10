@@ -157,16 +157,56 @@ The previously registered NAT-side A record remained in the authoritative zone. 
 Remove-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" -RecordData "10.0.2.15" -WhatIf
 ```
 
-The `-WhatIf` preview succeeded. **The actual deletion and post-remediation verification have not yet been confirmed in this lab record.**
+### Initial Remediation and Verification
 
-### Next verification steps
+Executed the removal command without `-WhatIf` and confirmed the deletion.
 
-1. Remove only the unwanted `10.0.2.15` A record after confirming the target.
-2. Repeat the A-record query and verify that only `192.168.56.10` is returned.
-3. Investigate whether Netlogon or another registration mechanism recreates unwanted A/AAAA records.
-4. Verify domain controller discovery and client connectivity.
+A subsequent DNS lookup continued to return both A records, including the unwanted NAT address `10.0.2.15`.
 
-*Evidence to add: before/after DNS query screenshots, with the after screenshot captured only after successful verification.*
+```powershell
+Resolve-DnsName dc01.lab.test -Type A -Server 192.168.56.10
+```
+
+To determine whether the unwanted record remained in the authoritative DNS zone, queried the DNS resource records directly:
+
+```powershell
+Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
+Select-Object HostName, RecordType, RecordData
+```
+
+The `RecordData` column displayed the object type `DnsServerResourceRecordA` rather than the underlying IPv4 address.
+
+Used a calculated property to extract the IPv4 address from the nested `RecordData` object:
+
+```powershell
+Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
+Select-Object HostName, RecordType,
+    @{Name="IPAddress";Expression={$_.RecordData.IPv4Address}}
+```
+
+This query returned only `192.168.56.10`, indicating that the unwanted NAT address was no longer present in the authoritative zone at the time of inspection.
+
+### Unexpected Result — DNS Record Reappeared
+
+While exploring an alternative method of inspecting nested PowerShell objects, queried the `RecordData` property directly:
+
+```powershell
+Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
+Select-Object -ExpandProperty RecordData
+```
+
+Unexpectedly, the output contained both IPv4 addresses:
+
+- `192.168.56.10` — intended host-only address
+- `10.0.2.15` — unwanted NAT address
+
+Both commands retrieved DNS resource records from the same zone but used different methods to display their properties.
+
+To rule out differences in PowerShell object formatting, repeated the DNS resource record query using both a calculated property and Select-Object -ExpandProperty RecordData.
+
+Both commands returned the same two IPv4 addresses, confirming that the unwanted record was present in the authoritative DNS zone.
+
+This indicated that deleting the existing record had not provided a persistent resolution. Further investigation was required to identify the mechanism responsible for DNS registration.
 
 ## 5. Planned Exercises
 
