@@ -27,6 +27,8 @@ The project is being developed incrementally. Completed work and verified result
 
 DC01 has two virtual network interfaces. The **host-only adapter** provides connectivity between lab systems, while the **NAT adapter** provides outbound connectivity. The domain controller hosts authoritative DNS for `lab.test`.
 
+![VirtualBox host-only adapter configuration](screenshots/01-virtualbox-host-only-adapter.png)
+
 > **Design note:** This multihomed configuration is useful for learning, but a single-homed domain controller is generally simpler to administer. We are investigating unwanted DNS registration associated with the NAT adapter.
 
 ## 3. Deployment and Verification
