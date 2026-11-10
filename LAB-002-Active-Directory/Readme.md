@@ -258,7 +258,25 @@ The unwanted `10.0.2.15` A record had returned.
 
 This reproduced the issue following a DNS registration refresh, despite DNS client registration being disabled on the NAT adapter. The result narrowed the investigation but did not conclusively identify the component responsible for publishing the address.
 
-Restricted DNS Server to the host-only interface using PowerShell:
+### Microsoft Documentation — Identifying the Registration Mechanism
+
+Because disabling DNS client registration on the NAT adapter had not prevented the unwanted A record from returning, consulted Microsoft's [KB 2023004 — Avoid registering unwanted NICs in DNS on a multihomed domain controller](https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/unwanted-nic-registered-dns-mulithomed-dc).
+
+Microsoft identifies three Windows services capable of registering DNS A records on a domain controller:
+
+- DNS Client
+- DNS Server
+- Netlogon
+
+The documentation explains that DNS Server can register addresses associated with its listening interfaces independently of the DNS client's per-adapter registration setting.
+
+This was consistent with the earlier finding that DNS Server was listening on both `10.0.2.15` and `192.168.56.10`.
+
+Microsoft's recommended remediation includes restricting DNS Server to the intended interface and removing unwanted DNS records.
+
+Based on this guidance, proceeded to modify the DNS Server listening configuration.
+
+Following Microsoft's documented DNS Server configuration procedure, restricted DNS Server to the host-only interface using PowerShell. [Microsoft DNS Server Configuration Guide](https://learn.microsoft.com/en-us/windows-server/networking/dns/quickstart-install-configure-dns-server?tabs=powershell&utm) :
 
 ```powershell
 $DnsServerSettings = Get-DnsServerSetting -All
@@ -272,6 +290,7 @@ Verified the configuration:
 Get-DnsServerSetting -All |
 Select-Object -ExpandProperty ListeningIPAddress
 ```
+![DNS Server listening configuration corrected](screenshots/13-dns-listening-address-corrected.png)
 
 The output confirmed that DNS Server was listening only on `192.168.56.10`.
 
@@ -293,6 +312,7 @@ Then queried the authoritative zone:
 Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
 Select-Object -ExpandProperty RecordData
 ```
+![Successful DNS registration verification](screenshots/14-dns-registration-verified.png)
 
 **Result:** Only `192.168.56.10` was returned. The unwanted NAT address did not reappear during the test.
 
