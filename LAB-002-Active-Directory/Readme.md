@@ -133,6 +133,9 @@ Examined the DNS registration settings for each network interface:
 ```powershell
 Get-DnsClient | Select-Object InterfaceAlias, RegisterThisConnectionsAddress
 ```
+**DNS Registration Results - Before Remediation**
+
+![DNS registration enabled on both network adapters](screenshots/09-dns-registration-before-remediation.png)
 
 Initially, both Ethernet interfaces permitted DNS address registration. The DNS Server service was also observed listening on multiple addresses. However, listening for DNS queries and registering a server's own addresses in DNS are separate functions.
 
@@ -143,6 +146,10 @@ Disabled DNS client address registration on the NAT adapter:
 ```powershell
 Set-DnsClient -InterfaceAlias "Ethernet" -RegisterThisConnectionsAddress $false
 ```
+
+**NAT Adapter DNS Registration Disabled**
+
+![DNS registration disabled on NAT adapter](screenshots/10-nat-dns-registration-disabled.png)
 
 The previously registered NAT-side A record remained in the authoritative zone. Prepared a targeted removal and previewed it without modifying the zone:
 
