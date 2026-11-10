@@ -103,36 +103,38 @@ The query identified `dc01.lab.test` as an LDAP service target. Inspection of th
 
 ## 4. Troubleshooting — Multihomed Domain Controller DNS Registration
 
-**Status: In progress — remediation not yet fully verified.**
-
 ### Problem
 
-A DNS lookup of `dc01.lab.test` returned two A records:
+During Active Directory DNS verification, the domain controller hostname `dc01.lab.test` was found to resolve to multiple IPv4 addresses.
 
-- `192.168.56.10` — desired host-only address
-- `10.0.2.15` — NAT address not directly reachable from the planned host-only client network
-
-**DNS Records Before Remediation**
-
-![Unwanted DNS registration on a multihomed domain controller](screenshots/07-dns-before-remediation.png)
-
-An unreachable address in domain controller DNS results can cause client connectivity failures or delays.
+Because DC01 uses separate NAT and host-only network adapters, an address registered from the wrong interface could cause domain clients to attempt connections over an unreachable network.
 
 ### Diagnosis
 
-Used PowerShell to query the DNS server directly:
+Queried the domain controller's DNS server directly to inspect its registered IPv4 addresses:
 
 ```powershell
 Resolve-DnsName dc01.lab.test -Type A -Server 192.168.56.10
 ```
 
-Examined the DNS client registration configuration:
+**DNS Records Before Remediation**
+
+![Unwanted DNS registration on a multihomed domain controller](screenshots/07-dns-before-remediation.png)
+
+The query returned two A records:
+
+- `192.168.56.10` — the intended host-only address, reachable by lab clients.
+- `10.0.2.15` — the NAT adapter address, not directly reachable from the host-only client network.
+
+This confirmed that DC01 was publishing an address unsuitable for the planned client network.
+
+Examined the DNS registration settings for each network interface:
 
 ```powershell
 Get-DnsClient | Select-Object InterfaceAlias, RegisterThisConnectionsAddress
 ```
 
-Initially, both Ethernet interfaces allowed address registration. The DNS Server service was also observed listening on multiple addresses. Listening for DNS requests and publishing a hostname's DNS records are separate settings.
+Initially, both Ethernet interfaces permitted DNS address registration. The DNS Server service was also observed listening on multiple addresses. However, listening for DNS queries and registering a server's own addresses in DNS are separate functions.
 
 ### Remediation performed
 
