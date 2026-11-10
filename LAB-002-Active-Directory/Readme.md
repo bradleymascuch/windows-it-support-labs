@@ -208,6 +208,105 @@ Both commands returned the same two IPv4 addresses, confirming that the unwanted
 
 This indicated that deleting the existing record had not provided a persistent resolution. Further investigation was required to identify the mechanism responsible for DNS registration.
 
+### Further Investigation — DNS Server Configuration
+
+Verified that DNS client address registration remained disabled on the NAT adapter, despite the unwanted A record returning.
+
+```powershell
+Get-DnsClient |
+Where-Object InterfaceAlias -in "Ethernet", "Ethernet 2" |
+Select-Object InterfaceAlias, RegisterThisConnectionsAddress
+```
+
+Examined the IP addresses on which the DNS Server service was configured to listen:
+
+```powershell
+Get-DnsServerSetting -All | Select-Object -ExpandProperty ListeningIPAddress
+```
+The results included both 10.0.2.15 and 192.168.56.10, along with IPv6 addresses.
+
+This confirmed that DNS Server was configured to listen on both IPv4 interfaces. However, DNS listening configuration and DNS record registration are separate functions, so this finding did not establish the cause of the unwanted A record.
+
+Inspected the DNS Server registry configuration:
+
+```powershell
+Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DNS\Parameters" -Name PublishAddresses
+```
+The PublishAddresses registry value was absent, indicating that no explicit address publication restriction had been configured through this setting.
+
+### Controlled Test — DNS Registration
+
+To investigate the recurring DNS record, verified that DNS client registration remained disabled on the NAT adapter.
+
+Removed the unwanted `10.0.2.15` A record and queried the authoritative DNS zone to establish a clean baseline. Only `192.168.56.10` remained.
+
+Triggered a DNS registration refresh:
+
+```powershell
+ipconfig /registerdns
+```
+
+Queried the authoritative DNS zone again:
+
+```powershell
+Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
+Select-Object -ExpandProperty RecordData
+```
+
+The unwanted `10.0.2.15` A record had returned.
+
+
+This reproduced the issue following a DNS registration refresh, despite DNS client registration being disabled on the NAT adapter. The result narrowed the investigation but did not conclusively identify the component responsible for publishing the address.
+
+Restricted DNS Server to the host-only interface using PowerShell:
+
+```powershell
+$DnsServerSettings = Get-DnsServerSetting -All
+$DnsServerSettings.ListeningIPAddress = @("192.168.56.10")
+Set-DnsServerSetting -InputObject $DnsServerSettings
+```
+
+Verified the configuration:
+
+```powershell
+Get-DnsServerSetting -All |
+Select-Object -ExpandProperty ListeningIPAddress
+```
+
+The output confirmed that DNS Server was listening only on `192.168.56.10`.
+
+Also inspected the DNS zone's NS records and confirmed that `dc01.lab.test` remained the designated name server.
+
+#### Validation
+
+Queried the authoritative DNS zone and confirmed that the unwanted `10.0.2.15` A record was no longer present.
+
+Repeated the registration test:
+
+```powershell
+ipconfig /registerdns
+```
+
+Then queried the authoritative zone:
+
+```powershell
+Get-DnsServerResourceRecord -ZoneName "lab.test" -Name "dc01" -RRType "A" |
+Select-Object -ExpandProperty RecordData
+```
+
+**Result:** Only `192.168.56.10` was returned. The unwanted NAT address did not reappear during the test.
+
+The remediation successfully passed the immediate DNS registration verification. Client-side DNS resolution and domain connectivity remain separate validation steps.
+
+#### Key Lessons
+
+- Multihomed domain controllers require careful DNS interface configuration.
+- Disabling DNS client registration on an adapter may not prevent other Windows services from publishing its address.
+- Authoritative DNS zone queries provide direct evidence of stored resource records.
+- Controlled reproduction and post-remediation testing are essential for validating a configuration change.
+- Microsoft documentation provides an authoritative basis for troubleshooting and remediation.
+
+**Reference:** [Microsoft KB 2023004 — Avoid registering unwanted NICs in DNS on a multihomed domain controller](https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/unwanted-nic-registered-dns-mulithomed-dc)
 ## 5. Planned Exercises
 
 - Configure Windows 11 client networking and join `lab.test`.
