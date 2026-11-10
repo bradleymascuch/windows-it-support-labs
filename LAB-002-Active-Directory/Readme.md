@@ -27,7 +27,7 @@ The project is being developed incrementally. Completed work and verified result
 
 DC01 has two virtual network interfaces. The **host-only adapter** provides connectivity between lab systems, while the **NAT adapter** provides outbound connectivity. The domain controller hosts authoritative DNS for `lab.test`.
 
-![VirtualBox host-only adapter configuration](screenshots/01-Virtualbox-host-only-adapter.png)
+
 
 > **Design note:** This multihomed configuration is useful for learning, but a single-homed domain controller is generally simpler to administer. We are investigating unwanted DNS registration associated with the NAT adapter.
 
@@ -37,7 +37,7 @@ DC01 has two virtual network interfaces. The **host-only adapter** provides conn
 
 Created a Windows Server 2025 Standard Evaluation virtual machine in VirtualBox and completed installation. Configured the VM with NAT and host-only network adapters.
 
-*Evidence to add: VirtualBox adapter configuration and installation screenshots.*
+![VirtualBox host-only adapter configuration](screenshots/01-Virtualbox-host-only-adapter.png)
 
 ### 3.2 Static Network Configuration
 
@@ -45,7 +45,17 @@ Configured the host-only interface with static IPv4 address `192.168.56.10/24` a
 
 The NAT interface provides an outbound path through VirtualBox; the host-only interface is used for internal Active Directory communication.
 
-*Evidence to add: static IPv4 configuration and verification screenshots.*
+**Static IPv4 Address Configuration**
+
+![Windows Server static IPv4 configuration](screenshots/02-ip-address-configuration.png)
+
+**IPv4 Address Verification**
+
+![Windows Server IPv4 address verification](screenshots/03-ip-address-verification.png)
+
+**Static Address Origin Verification**
+
+![Windows Server manually configured IPv4 address](screenshots/04-static-ip-origin-verification.png)
 
 ### 3.3 Active Directory Domain Services
 
@@ -54,6 +64,10 @@ Installed the AD DS role and management tools:
 ```powershell
 Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
 ```
+
+**AD DS Role Installation**
+
+![Active Directory Domain Services role installation](screenshots/05-adds-role-installation.png)
 
 Created a new forest and installed DNS:
 
@@ -69,7 +83,9 @@ Get-ADDomain
 
 Confirmed that the `NTDS`, `DNS`, `Netlogon`, and `KDC` services were running.
 
-*Evidence to add: AD DS role installation and domain verification screenshots.*
+**Active Directory Domain Verification**
+
+![Active Directory domain verification](screenshots/06-active-directory-domain-verification.png)
 
 ### 3.4 DNS Service Discovery
 
@@ -78,6 +94,10 @@ Queried the domain controller locator SRV record:
 ```powershell
 Resolve-DnsName _ldap._tcp.dc._msdcs.lab.test -Server 192.168.56.10 -Type SRV
 ```
+
+**DNS SRV Record Verification**
+
+![Active Directory domain controller DNS SRV record verification](screenshots/08-dns-srv-verification.png)
 
 The query identified `dc01.lab.test` as an LDAP service target. Inspection of the DNS response also revealed multiple addresses associated with the domain controller, prompting the troubleshooting investigation below.
 
@@ -91,6 +111,10 @@ A DNS lookup of `dc01.lab.test` returned two A records:
 
 - `192.168.56.10` — desired host-only address
 - `10.0.2.15` — NAT address not directly reachable from the planned host-only client network
+
+**DNS Records Before Remediation**
+
+![Unwanted DNS registration on a multihomed domain controller](screenshots/07-dns-before-remediation.png)
 
 An unreachable address in domain controller DNS results can cause client connectivity failures or delays.
 
