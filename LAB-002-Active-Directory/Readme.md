@@ -290,7 +290,7 @@ Verified the configuration:
 Get-DnsServerSetting -All |
 Select-Object -ExpandProperty ListeningIPAddress
 ```
-![DNS Server listening configuration corrected](screenshots/13-dns-listening-address-corrected.png)
+![DNS Server listening configuration corrected](screenshots/14-dns-registration-verified.png
 
 The output confirmed that DNS Server was listening only on `192.168.56.10`.
 
