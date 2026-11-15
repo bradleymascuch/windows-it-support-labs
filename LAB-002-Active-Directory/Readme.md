@@ -327,7 +327,6 @@ The remediation successfully passed the immediate DNS registration verification.
 - Microsoft documentation provides an authoritative basis for troubleshooting and remediation.
 
 **Reference:** [Microsoft KB 2023004 — Avoid registering unwanted NICs in DNS on a multihomed domain controller](https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/unwanted-nic-registered-dns-mulithomed-dc)
-## 5. Planned Exercises
 
 ## 5. Active Directory Client Administration
 
@@ -407,6 +406,8 @@ Test-ComputerSecureChannel -Verbose
 
 Result: `True`
 
+![Windows 11 domain membership and secure channel verification](screenshots/05-04-client-domain-join-verification.png)
+
 **Active Directory Computer Account Verification**
 
 On DC01, queried the workstation's computer account:
@@ -424,7 +425,104 @@ Successfully joined the Windows 11 workstation to `lab.test`, verified domain co
 
 This exercise demonstrated the relationship between DNS service discovery, network connectivity, Active Directory computer accounts, and domain authentication.
 
-- Create and manage Active Directory users, groups, and organizational units.
+
+### 5.2 Active Directory Organizational Units and Security Groups
+
+**Objective**
+
+Create a structured Active Directory hierarchy for organizing computer accounts, user accounts, and security groups. Move the domain-joined Windows 11 workstation into its designated Organizational Unit and create a security group for future access control exercises.
+
+**Organizational Unit Configuration**
+
+Created a parent Organizational Unit named `Lab` within the `lab.test` domain:
+
+```powershell
+New-ADOrganizationalUnit -Name "Lab" -Path "DC=lab,DC=test"
+```
+
+Created three child OUs to separate workstation, user, and group objects:
+
+```powershell
+New-ADOrganizationalUnit -Name "Workstations" -Path "OU=Lab,DC=lab,DC=test"
+
+New-ADOrganizationalUnit -Name "Users" -Path "OU=Lab,DC=lab,DC=test"
+
+New-ADOrganizationalUnit -Name "Groups" -Path "OU=Lab,DC=lab,DC=test"
+```
+
+Verified the resulting hierarchy:
+
+```powershell
+Get-ADOrganizationalUnit -Filter * |
+Select-Object Name, DistinguishedName
+```
+
+The query confirmed that `Workstations`, `Users`, and `Groups` were created beneath `OU=Lab`.
+
+**OU Structure Verification**
+
+![Active Directory OU structure](screenshots/05-05-ou-structure.png)
+
+**Workstation Account Organization**
+
+Moved the existing domain-joined workstation from the default `CN=Computers` container into the custom Workstations OU:
+
+```powershell
+Get-ADComputer -Identity "WIN11-LAB001" |
+Move-ADObject -TargetPath "OU=Workstations,OU=Lab,DC=lab,DC=test"
+```
+
+Verified the workstation's new Distinguished Name:
+
+```powershell
+Get-ADComputer -Identity "WIN11-LAB001" |
+Select-Object Name, DistinguishedName
+```
+
+Confirmed:
+
+`CN=WIN11-LAB001,OU=Workstations,OU=Lab,DC=lab,DC=test`
+
+This operation changed the computer account's location within Active Directory without modifying the workstation's operating system, network configuration, or domain membership.
+
+**Security Group Creation**
+
+Created a global security group named `IT-Support` inside the Groups OU:
+
+```powershell
+New-ADGroup `
+    -Name "IT-Support" `
+    -GroupScope Global `
+    -GroupCategory Security `
+    -Path "OU=Groups,OU=Lab,DC=lab,DC=test"
+```
+
+Verified the security group's properties:
+
+```powershell
+Get-ADGroup -Identity "IT-Support" |
+Select-Object Name, GroupScope, GroupCategory, DistinguishedName |
+Format-List
+```
+
+Confirmed that the group was created with Global scope and Security category, under the intended OU.
+
+**Security Group Verification**
+
+![IT-Support security group verification](screenshots/05-06-it-support-security-group.png)
+
+**Outcome**
+
+Successfully created and verified a custom Active Directory OU hierarchy, reorganized a domain-joined workstation's computer account, and provisioned a global security group using PowerShell.
+
+This exercise demonstrated directory object management, Distinguished Name interpretation, OU hierarchy design, and the distinction between organizational containers and security groups.
+
+No users have been added to the security group, and no resource permissions have been assigned.
+
+
+### 5.3 Planned Exercises
+
+- Create domain user accounts and manage security group memberships.
 - Configure and test Group Policy.
 - Troubleshoot domain authentication, DNS, and connectivity issues.
 - Build reusable PowerShell administration scripts.
