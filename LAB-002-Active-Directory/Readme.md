@@ -19,7 +19,7 @@ The project is being developed incrementally. Completed work and verified result
 | Server OS | Windows Server 2025 Standard Evaluation |
 | Active Directory domain | `lab.test` |
 | NetBIOS domain | `LAB` |
-| Client VM | Windows 11 Enterprise (domain join pending) |
+| Client VM | Windows 11 Enterprise  (`WIN11-LAB001`; joined to `lab.test`) |
 | Host-only subnet | `192.168.56.0/24` |
 | DC01 host-only interface (`Ethernet 2`) | `192.168.56.10/24` (static; no default gateway) |
 | DC01 NAT interface (`Ethernet`) | `10.0.2.15/24` (VirtualBox NAT) |
