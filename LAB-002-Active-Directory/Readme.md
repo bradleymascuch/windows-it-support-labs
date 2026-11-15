@@ -336,6 +336,19 @@ The remediation successfully passed the immediate DNS registration verification.
 
 Configure a Windows 11 Enterprise workstation to communicate with the Windows Server 2025 domain controller, join the `lab.test` domain, and verify domain connectivity and authentication.
 
+**Active Directory Domain Verification**
+
+On DC01, verified the Active Directory domain configuration:
+
+```powershell
+Get-ADDomain | Format-List *
+```
+
+The results confirmed that the domain and forest are named `lab.test`, the domain functional level is `Windows2025Domain`, and DC01 holds the PDC Emulator role.
+
+![Active Directory domain verification](screenshots/05-01-active-directory-domain-verification.png)
+
+
 **Client Network Configuration**
 
 Configured the Windows 11 virtual machine to use the VirtualBox host-only network, allowing communication with DC01 on the `192.168.56.0/24` subnet.
@@ -369,7 +382,7 @@ Verified domain controller discovery:
 ```powershell
 nltest /dsgetdc:lab.test
 ```
-
+![Domain-controller-discovery-verification](screenshots/5-02-domain-controller-discovery.png)
 The results confirmed that the workstation could discover `DC01` through Active Directory DNS.
 
 **Domain Join**
@@ -416,6 +429,9 @@ On DC01, queried the workstation's computer account:
 Get-ADComputer -Identity "WIN11-LAB001" -Properties Enabled, DistinguishedName, PasswordLastSet |
 Select-Object Name, Enabled, DistinguishedName, PasswordLastSet
 ```
+
+![Active Directory computer account verification](screenshots/05-03-ad-computer-account-verification.png)
+
 
 Confirmed that Active Directory had automatically created and enabled the workstation's computer account in the default `CN=Computers` container.
 
