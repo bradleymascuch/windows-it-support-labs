@@ -382,7 +382,7 @@ Verified domain controller discovery:
 ```powershell
 nltest /dsgetdc:lab.test
 ```
-![Domain-controller-discovery-verification](screenshots/5-02-domain-controller-discovery.png)
+![Domain-controller-discovery-verification](screenshots/05-02-domain-controller-discovery.png)
 The results confirmed that the workstation could discover `DC01` through Active Directory DNS.
 
 **Domain Join**
