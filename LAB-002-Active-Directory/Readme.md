@@ -329,7 +329,101 @@ The remediation successfully passed the immediate DNS registration verification.
 **Reference:** [Microsoft KB 2023004 — Avoid registering unwanted NICs in DNS on a multihomed domain controller](https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/unwanted-nic-registered-dns-mulithomed-dc)
 ## 5. Planned Exercises
 
-- Configure Windows 11 client networking and join `lab.test`.
+## 5. Active Directory Client Administration
+
+### 5.1 Windows 11 Domain Join and Verification
+
+**Objective**
+
+Configure a Windows 11 Enterprise workstation to communicate with the Windows Server 2025 domain controller, join the `lab.test` domain, and verify domain connectivity and authentication.
+
+**Client Network Configuration**
+
+Configured the Windows 11 virtual machine to use the VirtualBox host-only network, allowing communication with DC01 on the `192.168.56.0/24` subnet.
+
+The workstation received an IPv4 address through the VirtualBox host-only DHCP service.
+
+Configured the workstation to use the domain controller as its DNS server:
+
+```powershell
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses 192.168.56.10
+```
+
+This configuration allows the workstation to resolve Active Directory DNS records through the domain controller.
+
+**DNS and Domain Controller Discovery**
+
+Verified TCP connectivity to the DNS service:
+
+```powershell
+Test-NetConnection 192.168.56.10 -Port 53
+```
+
+Queried the domain controller's LDAP service location records:
+
+```powershell
+nslookup -type=SRV _ldap._tcp.dc._msdcs.lab.test
+```
+
+Verified domain controller discovery:
+
+```powershell
+nltest /dsgetdc:lab.test
+```
+
+The results confirmed that the workstation could discover `DC01` through Active Directory DNS.
+
+**Domain Join**
+
+Joined the Windows 11 workstation to the domain using PowerShell:
+
+```powershell
+Add-Computer -DomainName "lab.test" -Credential "LAB\Administrator" -Restart
+```
+
+The initial attempt to join the domain failed because the domain controller virtual machine was powered off.
+
+After starting DC01 and confirming domain controller discovery, repeated the domain join successfully.
+
+**Post-Join Verification**
+
+Verified domain membership:
+
+```powershell
+Get-CimInstance Win32_ComputerSystem |
+Select-Object Name, Domain, PartOfDomain
+```
+
+The output confirmed:
+
+- Domain: `lab.test`
+- PartOfDomain: `True`
+
+Verified the computer's secure channel with the domain:
+
+```powershell
+Test-ComputerSecureChannel -Verbose
+```
+
+Result: `True`
+
+**Active Directory Computer Account Verification**
+
+On DC01, queried the workstation's computer account:
+
+```powershell
+Get-ADComputer -Identity "WIN11-LAB001" -Properties Enabled, DistinguishedName, PasswordLastSet |
+Select-Object Name, Enabled, DistinguishedName, PasswordLastSet
+```
+
+Confirmed that Active Directory had automatically created and enabled the workstation's computer account in the default `CN=Computers` container.
+
+**Outcome**
+
+Successfully joined the Windows 11 workstation to `lab.test`, verified domain controller discovery, confirmed domain membership, and validated the computer's secure channel.
+
+This exercise demonstrated the relationship between DNS service discovery, network connectivity, Active Directory computer accounts, and domain authentication.
+
 - Create and manage Active Directory users, groups, and organizational units.
 - Configure and test Group Policy.
 - Troubleshoot domain authentication, DNS, and connectivity issues.
