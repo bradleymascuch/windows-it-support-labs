@@ -536,12 +536,222 @@ This exercise demonstrated directory object management, Distinguished Name inter
 No users have been added to the security group, and no resource permissions have been assigned.
 
 
-### 5.3 Planned Exercises
+### 5.3 Active Directory User Provisioning and Group Membership
 
-- Create domain user accounts and manage security group memberships.
-- Configure and test Group Policy.
-- Troubleshoot domain authentication, DNS, and connectivity issues.
+**Objective:** Provision a domain user in the designated Users OU, configure initial authentication requirements, assign security group membership, and validate the user's domain logon on a Windows 11 workstation.
+
+**Environment:** `DC01.lab.test` (Windows Server 2025), `WIN11-LAB001` (Windows 11), domain `lab.test`.
+
+#### Create and verify a domain user
+
+Created a disabled user account in `OU=Users,OU=Lab,DC=lab,DC=test` to allow verification before activation:
+
+```powershell
+New-ADUser `
+    -Name "Alex Morgan" `
+    -GivenName "Alex" `
+    -Surname "Morgan" `
+    -SamAccountName "amorgan" `
+    -UserPrincipalName "amorgan@lab.test" `
+    -Path "OU=Users,OU=Lab,DC=lab,DC=test" `
+    -Enabled $false
+```
+
+Verified the account's identity, distinguished name, and initial state:
+
+```powershell
+Get-ADUser -Identity "amorgan" -Properties Enabled,UserPrincipalName |
+    Select-Object Name,SamAccountName,UserPrincipalName,Enabled,DistinguishedName |
+    Format-List
+```
+
+Confirmed the account was initially disabled and located at `CN=Alex Morgan,OU=Users,OU=Lab,DC=lab,DC=test`.
+
+![New domain user verification](screenshots/05-07-ad-user-creation-and-verification.png)
+
+#### Configure password and enable account
+
+Assigned a temporary password securely, required a password change at the next sign-in, and enabled the account:
+
+```powershell
+Set-ADAccountPassword -Identity "amorgan" -Reset `
+    -NewPassword (Read-Host "Enter temporary password" -AsSecureString)
+
+Set-ADUser -Identity "amorgan" -ChangePasswordAtLogon $true
+Enable-ADAccount -Identity "amorgan"
+```
+
+Verified the account status:
+
+```powershell
+Get-ADUser -Identity "amorgan" -Properties pwdLastSet,PasswordLastSet,Enabled |
+    Select-Object Name,Enabled,pwdLastSet,PasswordLastSet |
+    Format-List
+```
+
+Observed `Enabled : True` and `pwdLastSet : 0`. The zero value is consistent with **User must change password at next logon**; `PasswordLastSet` may appear blank in this state.
+
+![Enabled user and first-logon password requirement](screenshots/05-08-ad-user-enabled.png)
+
+#### Assign and verify security group membership
+
+Added the user to the previously created `IT-Support` global security group:
+
+```powershell
+Add-ADGroupMember -Identity "IT-Support" -Members "amorgan"
+
+Get-ADGroupMember -Identity "IT-Support" |
+    Select-Object Name,SamAccountName,ObjectClass
+```
+
+Verified `Alex Morgan` (`amorgan`) appeared as a user member of the group. Group membership alone does not grant administrative privileges or access to resources unless permissions are assigned to that group.
+
+![IT-Support security group membership](screenshots/05-09-security-group-membership.png)
+
+#### Validate domain authentication on Windows 11
+
+Signed in to `WIN11-LAB001` as `amorgan@lab.test` using the temporary password and completed the required password change. Verified the signed-in identity and security group membership:
+
+```powershell
+whoami
+whoami /groups | findstr /i "IT-Support"
+```
+
+The logon succeeded and the user's access token included `LAB\IT-Support`.
+
+![Domain user logon and access-token group verification](screenshots/05-10-domain-user-logon.png)
+
+**Result:** Successfully provisioned and enabled a domain user, enforced an initial password change, assigned group membership, and validated domain authentication and the resulting access token on a Windows 11 domain member.
+
+### 5.4 Group Policy Configuration and Time Synchronization Troubleshooting
+
+**Objective:** Create and link a workstation-scoped Group Policy Object (GPO), configure an inactivity lock policy, troubleshoot a failed computer policy refresh, and verify successful policy application.
+
+#### Create and link a workstation GPO
+
+Using **Group Policy Management** on `DC01`, created `LAB - Workstation Security Baseline` and linked it to:
+
+`OU=Workstations,OU=Lab,DC=lab,DC=test`
+
+This OU contains the `WIN11-LAB001` computer account. The GPO was linked at the workstation OU rather than the domain root to limit its intended scope.
+
+![Workstations OU GPO link](screenshots/05-11-workstation-gpo-link.png)
+
+#### Configure an inactivity security policy
+
+Edited the GPO using the following path:
+
+**Computer Configuration → Policies → Windows Settings → Security Settings → Local Policies → Security Options**
+
+Enabled **Interactive logon: Machine inactivity limit** and configured **600 seconds (10 minutes)**.
+
+Because this is a computer policy, it is targeted at the workstation regardless of which domain user signs in.
+
+![Workstation inactivity policy configuration](screenshots/05-12-workstation-inactivity-policy.png)
+
+#### Troubleshoot failed computer policy refresh
+
+On `WIN11-LAB001`, ran:
+
+```powershell
+gpupdate /force
+```
+
+The **computer policy update failed**, reporting that the workstation's clock was not synchronized with a domain controller. The **user policy update succeeded**.
+
+![Original Group Policy time synchronization failure](screenshots/05-13-gpo-time-sync-failure.png)
+
+Investigated the Windows Time configuration on both systems:
+
+```powershell
+w32tm /query /status
+w32tm /query /source
+w32tm /query /configuration
+```
+
+Initial findings:
+
+- `WIN11-LAB001` identified `DC01.lab.test` as its time source, but the clocks were not currently aligned.
+- `DC01` reported `Local CMOS Clock` as its time source.
+- Both virtual machines were configured for Pacific Time; checking UTC confirmed a real clock difference rather than merely a display time-zone difference.
+- `DC01` held the PDC Emulator role and was not configured to use a manual external NTP peer.
+
+Measured the offset from the Windows 11 client:
+
+```powershell
+w32tm /stripchart /computer:DC01.lab.test /samples:5 /dataonly
+```
+
+The offset was approximately **+3,484 seconds (58 minutes)**. This exceeded the typical five-minute Kerberos clock-skew tolerance and was consistent with the Group Policy error.
+
+On `DC01`, confirmed that the Windows Time NTP server provider was enabled, UDP port 123 was bound, and an enabled inbound firewall rule allowed UDP 123. Also verified that DC01 could obtain NTP responses from `time.windows.com`; the external offset was approximately **−3,485 seconds**, confirming DC01's clock was ahead of the reference.
+
+Configured the PDC Emulator to use an external NTP peer:
+
+```powershell
+w32tm /config /manualpeerlist:"time.windows.com,0x8" /syncfromflags:manual /reliable:yes /update
+```
+
+Verified that `w32tm /query /configuration` showed `Type: NTP` and `NtpServer: time.windows.com,0x8`, then restarted the Windows Time service and requested synchronization:
+
+```powershell
+Restart-Service W32Time
+w32tm /resync /rediscover
+```
+
+A subsequent `w32tm /stripchart` from `WIN11-LAB001` to `DC01.lab.test` showed offsets decreasing from approximately **−1.32 seconds to −0.38 seconds**.
+
+![Time synchronization verification after remediation](screenshots/05-13-time-synchronization-verification.png)
+
+**Troubleshooting note:** An earlier direct-IP NTP stripchart attempt failed, while a later hostname-based attempt succeeded and resolved to the same IP. The available tests did not establish why the earlier attempt failed; they did establish the large clock offset and its subsequent correction. Likewise, the Group Policy error and successful refresh after time correction support time skew as the cause, without proving which internal policy-processing operation failed.
+
+#### Verify Group Policy application
+
+After correcting the clock discrepancy, reran on `WIN11-LAB001`:
+
+```powershell
+gpupdate /force
+```
+
+Both **Computer Policy** and **User Policy** updates completed successfully.
+
+Checked the applied computer GPOs:
+
+```powershell
+gpresult /scope computer /r
+```
+
+The **Applied Group Policy Objects** section listed:
+
+```text
+LAB - Workstation Security Baseline
+Default Domain Policy
+```
+
+The output identified `DC01.lab.test` as the Group Policy source.
+
+![Applied workstation GPO verification](screenshots/05-14-workstation-gpo-verification.png)
+
+**Pending setting-level verification:** Confirm that the inactivity policy's registry value is `600` on `WIN11-LAB001`:
+
+```powershell
+Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name InactivityTimeoutSecs
+```
+
+Once verified, add the following screenshot (do not include the image link until the screenshot exists):
+
+`05-15-workstation-inactivity-verification.png`
+
+**Result:** Created and linked a workstation-specific GPO, configured a 10-minute inactivity policy, diagnosed a substantial domain time discrepancy, corrected the PDC Emulator's upstream time configuration, and verified that the workstation successfully processed the GPO. Direct verification of the 600-second registry setting remains pending.
+
+### 5.5 Planned Exercises
+
+- Verify the effective inactivity timeout value on `WIN11-LAB001`.
+- Troubleshoot Group Policy scope, inheritance, and security filtering.
+- Practice account unlocks, password resets, and user lifecycle administration.
+- Investigate additional domain authentication, DNS, and connectivity scenarios.
 - Build reusable PowerShell administration scripts.
+
 
 ## 6. Lessons Learned So Far
 
