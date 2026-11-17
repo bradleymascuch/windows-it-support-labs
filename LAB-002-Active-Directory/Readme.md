@@ -676,73 +676,167 @@ Initial findings:
 - Both virtual machines were configured for Pacific Time; checking UTC confirmed a real clock difference rather than merely a display time-zone difference.
 - `DC01` held the PDC Emulator role and was not configured to use a manual external NTP peer.
 
-Measured the offset from the Windows 11 client:
+### Diagnosing Domain Controller Time Synchronization
+
+Measured the time difference between `WIN11-LAB001` and `DC01`:
 
 ```powershell
 w32tm /stripchart /computer:DC01.lab.test /samples:5 /dataonly
 ```
 
-The offset was approximately **+3,484 seconds (58 minutes)**. This exceeded the typical five-minute Kerberos clock-skew tolerance and was consistent with the Group Policy error.
+The offset was approximately **+3,484 seconds (58 minutes)**, exceeding the typical five-minute Kerberos clock-skew tolerance and providing a likely explanation for the Group Policy processing failure.
 
-On `DC01`, confirmed that the Windows Time NTP server provider was enabled, UDP port 123 was bound, and an enabled inbound firewall rule allowed UDP 123. Also verified that DC01 could obtain NTP responses from `time.windows.com`; the external offset was approximately **−3,485 seconds**, confirming DC01's clock was ahead of the reference.
+#### Investigating the DC01 Time Source
 
-Configured the PDC Emulator to use an external NTP peer:
+On `DC01`, examined the Windows Time service:
+
+```powershell
+w32tm /query /status
+w32tm /query /source
+w32tm /query /configuration
+```
+
+The initial configuration reported:
+
+```text
+Source: Local CMOS Clock
+Type: NT5DS
+NtpServer Enabled: 1
+```
+
+**Finding:** DC01 was using its local system clock rather than synchronizing with an external NTP source.
+
+Although `NT5DS` normally allows domain-joined computers to synchronize through the Active Directory time hierarchy, DC01 held the PDC Emulator FSMO role and had no upstream domain controller from which to obtain authoritative time.
+
+The local clock had become approximately 58 minutes ahead of the correct time.
+
+#### Investigating NTP Service and Firewall Configuration
+
+Verified that the Windows Time service was running:
+
+```powershell
+Get-Service W32Time
+```
+
+Confirmed that UDP port 123 was bound:
+
+```powershell
+Get-NetUDPEndpoint -LocalPort 123 |
+    Select-Object LocalAddress,LocalPort,OwningProcess
+```
+
+Attempted to locate the Windows Time firewall rule group:
+
+```powershell
+Get-NetFirewallRule -DisplayGroup "Windows Time Service"
+```
+
+The command returned an error because no firewall rule group with that display name was found.
+
+Rather than assuming NTP traffic was blocked, inspected firewall rules directly by protocol and port:
+
+```powershell
+Get-NetFirewallPortFilter |
+    Where-Object {
+        $_.Protocol -eq "UDP" -and $_.LocalPort -eq "123"
+    } |
+    Get-NetFirewallRule |
+    Select-Object DisplayName,Enabled,Direction,Action
+```
+
+The results confirmed an enabled inbound rule allowing UDP port 123.
+
+**Finding:** The NTP provider was enabled, the operating system had an active UDP 123 endpoint, and an inbound firewall allowance existed. The investigation therefore continued toward the time source rather than making unnecessary firewall changes.
+
+#### Verifying External NTP Connectivity
+
+On `DC01`, queried an external NTP server:
+
+```powershell
+w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
+```
+
+The first request timed out, but subsequent requests succeeded and reported offsets of approximately:
+
+```text
+-3484.7398182s
+-3484.7437866s
+```
+
+This independently confirmed that DC01's clock was approximately 58 minutes ahead of the external reference.
+
+#### Configuring the PDC Emulator's Time Source
+
+Configured DC01 to synchronize with an external NTP peer:
 
 ```powershell
 w32tm /config /manualpeerlist:"time.windows.com,0x8" /syncfromflags:manual /reliable:yes /update
 ```
 
-Verified that `w32tm /query /configuration` showed `Type: NTP` and `NtpServer: time.windows.com,0x8`, then restarted the Windows Time service and requested synchronization:
+Verified the configuration:
+
+```powershell
+w32tm /query /configuration
+```
+
+The updated configuration showed:
+
+```text
+Type: NTP
+NtpServer: time.windows.com,0x8
+```
+
+Restarted Windows Time and requested synchronization:
 
 ```powershell
 Restart-Service W32Time
 w32tm /resync /rediscover
 ```
 
-A subsequent `w32tm /stripchart` from `WIN11-LAB001` to `DC01.lab.test` showed offsets decreasing from approximately **−1.32 seconds to −0.38 seconds**.
+#### Verifying Remediation
 
-![Time synchronization verification after remediation](screenshots/05-13-time-synchronization-verification.png)
+On `WIN11-LAB001`, repeated the time-offset measurement:
 
-**Troubleshooting note:** An earlier direct-IP NTP stripchart attempt failed, while a later hostname-based attempt succeeded and resolved to the same IP. The available tests did not establish why the earlier attempt failed; they did establish the large clock offset and its subsequent correction. Likewise, the Group Policy error and successful refresh after time correction support time skew as the cause, without proving which internal policy-processing operation failed.
+```powershell
+w32tm /stripchart /computer:DC01.lab.test /samples:5 /dataonly
+```
 
-#### Verify Group Policy application
+The resulting offsets decreased from approximately −1.323 seconds to −0.381 seconds, confirming that the workstation and domain controller clocks were now closely synchronized.
 
-After correcting the clock discrepancy, reran on `WIN11-LAB001`:
+![Time synchronization verification](screenshots/05-13-time-synchronization-verification.png)
+
+Repeated Group Policy processing:
 
 ```powershell
 gpupdate /force
 ```
 
-Both **Computer Policy** and **User Policy** updates completed successfully.
+Both computer and user policy updates completed successfully.
 
-Checked the applied computer GPOs:
+Verified the applied Group Policy Objects:
 
 ```powershell
 gpresult /scope computer /r
 ```
 
-The **Applied Group Policy Objects** section listed:
+The results included:
 
 ```text
+Applied Group Policy Objects
+-----------------------------
 LAB - Workstation Security Baseline
 Default Domain Policy
 ```
 
-The output identified `DC01.lab.test` as the Group Policy source.
+![Workstation GPO verification](screenshots/05-14-workstation-gpo-verification.png)
 
-![Applied workstation GPO verification](screenshots/05-14-workstation-gpo-verification.png)
+#### Troubleshooting Outcome
 
-**Pending setting-level verification:** Confirm that the inactivity policy's registry value is `600` on `WIN11-LAB001`:
+The investigation identified an incorrectly synchronized PDC Emulator clock as the likely cause of the Group Policy processing failure.
 
-```powershell
-Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name InactivityTimeoutSecs
-```
+Configuring DC01 with an external NTP source corrected the clock discrepancy and restored successful Group Policy processing.
 
-Once verified, add the following screenshot (do not include the image link until the screenshot exists):
-
-`05-15-workstation-inactivity-verification.png`
-
-**Result:** Created and linked a workstation-specific GPO, configured a 10-minute inactivity policy, diagnosed a substantial domain time discrepancy, corrected the PDC Emulator's upstream time configuration, and verified that the workstation successfully processed the GPO. Direct verification of the 600-second registry setting remains pending.
+The exercise demonstrated systematic troubleshooting across Windows Time, NTP, Windows Firewall, Active Directory authentication, and Group Policy.
 
 ### 5.5 Planned Exercises
 
