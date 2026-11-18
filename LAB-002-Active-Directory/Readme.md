@@ -1124,47 +1124,37 @@ Set-GPPermission `
 
 The controlled test narrowed the investigation to security filtering and the computer's authorization context.
 
+
 #### 6.2.4 Investigate Kerberos Authentication
 
-Because the computer's Active Directory membership was correct but its effective authorization did not reflect the pilot group, investigated the workstation's Kerberos authentication state.
+Because Active Directory group membership and GPO configuration were correct, investigated whether the workstation's Kerberos authentication state reflected its updated security group membership.
 
-Kerberos tickets can carry authorization information associated with the authenticated security principal. Changes to group membership may not be reflected in existing authentication sessions until updated tickets are obtained.
+Kerberos tickets can contain authorization information that may become outdated following changes to Active Directory group membership.
 
-On `WIN11-LAB001`, inspected the Local System Kerberos ticket cache:
-
-```powershell
-klist -li 0x3e7
-```
-
-The output showed a Ticket Granting Ticket (TGT) associated with the computer account:
-
-- **Client:** `WIN11-LAB001$@LAB.TEST`
-- **Service:** `krbtgt/LAB.TEST`
-- **KDC:** `DC01.lab.test`
-
-![Computer Kerberos Ticket](screenshots/06-08-kerberos-system-ticket.png)
-
-Next, inspected the available logon sessions:
+On `WIN11-LAB001`, enumerated the computer's logon sessions:
 
 ```powershell
 klist sessions
 ```
 
-Relevant well-known logon session identifiers:
-
-| Identifier | Windows Security Context |
-|---|---|
-| `0x3e7` | Local System |
-| `0x3e4` | Network Service |
-| `0x3e5` | Local Service |
-
-The `0x3e7` identifier allowed the Local System Kerberos ticket cache to be targeted directly.
+Identified `0x3e7` as the well-known hexadecimal logon session identifier (LUID) for Windows Local System, the security context used for computer-side Group Policy processing.
 
 ![Kerberos Logon Sessions](screenshots/06-09-kerberos-session-identification.png)
 
-**Working hypothesis:** The computer was using Kerberos authorization information that did not reflect its current pilot-group membership.
+Used this identifier to inspect the Local System Kerberos ticket cache:
 
-The ticket inspection confirmed the presence of a computer-account TGT but did not expose its Privilege Attribute Certificate (PAC) group memberships. Stale authorization information was therefore a working diagnosis, not a conclusively demonstrated ticket-content defect.
+```powershell
+klist -li 0x3e7
+```
+
+The `-li` parameter specifies the logon session to inspect. The output confirmed an active Ticket Granting Ticket (TGT) for `WIN11-LAB001$`, issued through `DC01.lab.test`.
+
+![Computer Kerberos Ticket](screenshots/06-08-kerberos-system-ticket.png)
+
+**Working hypothesis:** The computer's existing Kerberos authorization information did not reflect its current membership in `GPO-USB-Restriction-Pilot`.
+
+Although the ticket inspection confirmed an active computer-account TGT, it did not expose the ticket's Privilege Attribute Certificate (PAC) group memberships. Stale authorization information was therefore suspected but not conclusively verified.
+
 
 #### 6.2.5 Purge the Local System Kerberos Ticket Cache
 
