@@ -1185,7 +1185,9 @@ gpresult /scope computer /r
 
 The result was consistent with the hypothesis that the computer's authentication or authorization state had not incorporated the updated group membership.
 
-Because the ticket purge and restart were performed together, the test did not establish which operation independently resolved the issue.
+Previous workstation restarts and Group Policy updates had failed to resolve the issue. However, after explicitly purging the Local System Kerberos ticket cache and restarting the workstation, the USB restriction GPO applied successfully.
+
+This result strongly supports the hypothesis that stale Kerberos authorization information was preventing the computer's updated security group membership from being recognized during Group Policy processing.
 
 #### 6.2.6 Root Cause Assessment and Lessons Learned
 
