@@ -838,16 +838,386 @@ Configuring DC01 with an external NTP source corrected the clock discrepancy and
 
 The exercise demonstrated systematic troubleshooting across Windows Time, NTP, Windows Firewall, Active Directory authentication, and Group Policy.
 
-### 5.5 Planned Exercises
+### 5.5 Completed Exercises and Next Steps
 
-- Verify the effective inactivity timeout value on `WIN11-LAB001`.
-- Troubleshoot Group Policy scope, inheritance, and security filtering.
+**Completed:**
+- Verified the effective 600-second workstation inactivity timeout on `WIN11-LAB001`.
+- Created and deployed a workstation security baseline GPO.
+- Troubleshot Group Policy processing failures caused by domain time synchronization.
+- Configured a security-filtered GPO targeting a specific computer security group.
+- Investigated a Group Policy application failure involving Kerberos authentication and security group authorization.
+
+**Remaining Exercises:**
 - Practice account unlocks, password resets, and user lifecycle administration.
 - Investigate additional domain authentication, DNS, and connectivity scenarios.
 - Build reusable PowerShell administration scripts.
 
+## 6. Group Policy Security Filtering and Kerberos Troubleshooting
 
-## 6. Lessons Learned So Far
+### 6.1 USB Restriction Pilot Configuration
+
+**Objective:** Configure a security-filtered Group Policy Object (GPO) that restricts removable storage access on selected domain workstations without affecting every computer in the Workstations OU.
+
+This exercise demonstrates the relationship between Active Directory security groups, GPO permissions, organizational unit linking, and computer-side Group Policy processing.
+
+**Lab Environment:**
+
+- **Domain Controller:** `DC01.lab.test`
+- **Domain:** `lab.test`
+- **Client Workstation:** `WIN11-LAB001`
+- **Target OU:** `OU=Workstations,OU=Lab,DC=lab,DC=test`
+- **Security Group:** `GPO-USB-Restriction-Pilot`
+- **GPO:** `LAB - USB Storage Restriction Pilot`
+
+#### 6.1.1 Create the Pilot Security Group
+
+Created a global security group within the Lab Groups OU using PowerShell on DC01:
+
+```powershell
+New-ADGroup `
+    -Name "GPO-USB-Restriction-Pilot" `
+    -SamAccountName "GPO-USB-Restriction-Pilot" `
+    -GroupScope Global `
+    -GroupCategory Security `
+    -Path "OU=Groups,OU=Lab,DC=lab,DC=test" `
+    -Description "Pilot group for removable storage restriction policy"
+```
+
+Verified the group:
+
+```powershell
+Get-ADGroup -Identity "GPO-USB-Restriction-Pilot" |
+    Select-Object Name, GroupScope, GroupCategory, DistinguishedName
+```
+
+![USB Pilot Security Group](screenshots/06-01-usb-pilot-security-group.png)
+
+#### 6.1.2 Add the Workstation to the Pilot Group
+
+Added the Windows 11 computer account to the security group:
+
+```powershell
+Add-ADGroupMember `
+    -Identity "GPO-USB-Restriction-Pilot" `
+    -Members "WIN11-LAB001$"
+```
+
+Verified membership:
+
+```powershell
+Get-ADGroupMember -Identity "GPO-USB-Restriction-Pilot" |
+    Select-Object Name, SamAccountName, ObjectClass
+```
+
+The output confirmed that `WIN11-LAB001$` was a member of the pilot group with an object class of `computer`.
+
+![USB Pilot Group Membership](screenshots/06-02-usb-pilot-group-membership.png)
+
+**Technical note:** Security group membership alone does not cause a GPO to apply. The GPO must also be linked within the computer's applicable Active Directory scope, and the computer must have permission to apply it.
+
+#### 6.1.3 Create and Configure the GPO
+
+Created a dedicated Group Policy Object:
+
+```powershell
+New-GPO `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -Comment "Pilot policy to restrict removable storage access on selected domain workstations"
+```
+
+Verified its creation:
+
+```powershell
+Get-GPO -Name "LAB - USB Storage Restriction Pilot" |
+    Select-Object DisplayName, Id, GpoStatus, CreationTime |
+    Format-List
+```
+
+![USB Pilot GPO Creation](screenshots/06-03-usb-pilot-gpo-creation.png)
+
+Opened Group Policy Management and configured:
+
+**Computer Configuration → Policies → Administrative Templates → System → Removable Storage Access**
+
+- **Setting:** All Removable Storage classes: Deny all access
+- **State:** Enabled
+
+This computer-level restriction denies access to supported removable storage classes on affected workstations, regardless of the user signing in.
+
+![USB Restriction Policy Configuration](screenshots/06-04-usb-pilot-policy-configuration.png)
+
+#### 6.1.4 Configure Security Filtering
+
+The default GPO permissions allow `Authenticated Users` to apply the policy. To limit deployment to the pilot group, modified the permissions using PowerShell.
+
+Granted the pilot group permission to apply the GPO:
+
+```powershell
+Set-GPPermission `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -TargetName "GPO-USB-Restriction-Pilot" `
+    -TargetType Group `
+    -PermissionLevel GpoApply
+```
+
+Changed `Authenticated Users` to read-only access:
+
+```powershell
+Set-GPPermission `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -TargetName "Authenticated Users" `
+    -TargetType Group `
+    -PermissionLevel GpoRead `
+    -Replace
+```
+
+Verified the permissions:
+
+```powershell
+Get-GPPermission `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -All
+```
+
+The resulting permissions were:
+
+| Security Principal | Permission |
+|---|---|
+| GPO-USB-Restriction-Pilot | GpoApply |
+| Authenticated Users | GpoRead |
+| Domain Admins | GpoEditDeleteModifySecurity |
+| Enterprise Admins | GpoEditDeleteModifySecurity |
+| SYSTEM | GpoEditDeleteModifySecurity |
+
+Other default security principals retained their existing permissions.
+
+![USB Pilot Security Filtering](screenshots/06-05-usb-pilot-security-filtering.png)
+
+**Technical note:** `GpoRead` allows authenticated computers to read the policy without granting permission to apply it. Members of the pilot group receive `GpoApply`, which includes the necessary read and apply permissions.
+
+#### 6.1.5 Link the GPO to the Workstations OU
+
+Linked the USB restriction GPO to the existing Workstations OU:
+
+```powershell
+New-GPLink `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -Target "OU=Workstations,OU=Lab,DC=lab,DC=test"
+```
+
+The resulting link was enabled, with enforcement disabled and link order 2.
+
+![USB Pilot GPO Link](screenshots/06-06-usb-pilot-gpo-link.png)
+
+At this point, a workstation needed to satisfy two conditions to apply the GPO:
+
+1. Reside within the linked Workstations OU or an applicable child OU.
+2. Possess `GpoApply` permission through membership in `GPO-USB-Restriction-Pilot`.
+
+The configuration was complete, but subsequent client-side verification revealed that the policy was not initially applying. This required additional troubleshooting, documented in the following section.
+
+
+### 6.2 Troubleshooting GPO Application and Kerberos Authentication
+
+#### 6.2.1 Initial Problem: Security-Filtered GPO Not Applying
+
+After configuring and linking the USB restriction GPO, restarted `WIN11-LAB001` and forced Group Policy processing:
+
+```powershell
+gpupdate /force
+```
+
+Checked the applied computer policies:
+
+```powershell
+gpresult /scope computer /r
+```
+
+**Observed behavior:**
+
+- `LAB - Workstation Security Baseline` applied successfully.
+- `LAB - USB Storage Restriction Pilot` was absent from the applied GPO list.
+- The computer's reported security groups did not include `GPO-USB-Restriction-Pilot`.
+- Repeated Group Policy updates and workstation restarts did not resolve the issue.
+
+This suggested that the problem was specific to the security-filtered policy rather than a general failure of domain connectivity or Group Policy processing.
+
+![Initial GPO Application Failure](screenshots/06-07-gpo-application-failure.png)
+
+#### 6.2.2 Verify Active Directory Scope and Group Membership
+
+On `DC01`, verified the workstation's OU placement:
+
+```powershell
+Get-ADComputer -Identity "WIN11-LAB001" |
+    Select-Object Name, DistinguishedName
+```
+
+Confirmed the computer was located in:
+
+`CN=WIN11-LAB001,OU=Workstations,OU=Lab,DC=lab,DC=test`
+
+Verified security group membership from both directions:
+
+```powershell
+Get-ADGroupMember -Identity "GPO-USB-Restriction-Pilot"
+
+Get-ADComputer -Identity "WIN11-LAB001" -Properties MemberOf |
+    Select-Object -ExpandProperty MemberOf
+```
+
+Both queries confirmed membership in `GPO-USB-Restriction-Pilot`.
+
+Also verified that:
+
+- The GPO was linked to the correct Workstations OU.
+- The pilot group had `GpoApply` permission.
+- `Authenticated Users` retained `GpoRead` permission.
+- The removable storage restriction was enabled.
+- No WMI filter was configured.
+
+These checks reduced the likelihood of an OU placement, group membership, or GPO configuration error.
+
+#### 6.2.3 Isolate the Security Filtering Problem
+
+To determine whether the GPO itself was functional, temporarily changed its security filtering.
+
+First, confirmed that `WIN11-LAB001` was the only computer in the lab's Workstations OU:
+
+```powershell
+Get-ADComputer `
+    -SearchBase "OU=Workstations,OU=Lab,DC=lab,DC=test" `
+    -SearchScope Subtree `
+    -Filter * |
+    Select-Object Name
+```
+
+On `DC01`, temporarily granted `Authenticated Users` permission to apply the policy:
+
+```powershell
+Set-GPPermission `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -TargetName "Authenticated Users" `
+    -TargetType Group `
+    -PermissionLevel GpoApply `
+    -Replace
+```
+
+On `WIN11-LAB001`:
+
+```powershell
+gpupdate /force
+gpresult /scope computer /r
+```
+
+**Result:** The USB restriction GPO appeared in the Applied Group Policy Objects list.
+
+This confirmed that the GPO could be processed successfully when the pilot-group filtering requirement was removed.
+
+Restored the intended security filtering:
+
+```powershell
+Set-GPPermission `
+    -Name "LAB - USB Storage Restriction Pilot" `
+    -TargetName "Authenticated Users" `
+    -TargetType Group `
+    -PermissionLevel GpoRead `
+    -Replace
+```
+
+The controlled test narrowed the investigation to security filtering and the computer's authorization context.
+
+#### 6.2.4 Investigate Kerberos Authentication
+
+Because the computer's Active Directory membership was correct but its effective authorization did not reflect the pilot group, investigated the workstation's Kerberos authentication state.
+
+Kerberos tickets can carry authorization information associated with the authenticated security principal. Changes to group membership may not be reflected in existing authentication sessions until updated tickets are obtained.
+
+On `WIN11-LAB001`, inspected the Local System Kerberos ticket cache:
+
+```powershell
+klist -li 0x3e7
+```
+
+The output showed a Ticket Granting Ticket (TGT) associated with the computer account:
+
+- **Client:** `WIN11-LAB001$@LAB.TEST`
+- **Service:** `krbtgt/LAB.TEST`
+- **KDC:** `DC01.lab.test`
+
+![Computer Kerberos Ticket](screenshots/06-08-kerberos-system-ticket.png)
+
+Next, inspected the available logon sessions:
+
+```powershell
+klist sessions
+```
+
+Relevant well-known logon session identifiers:
+
+| Identifier | Windows Security Context |
+|---|---|
+| `0x3e7` | Local System |
+| `0x3e4` | Network Service |
+| `0x3e5` | Local Service |
+
+The `0x3e7` identifier allowed the Local System Kerberos ticket cache to be targeted directly.
+
+![Kerberos Logon Sessions](screenshots/06-09-kerberos-session-identification.png)
+
+**Working hypothesis:** The computer was using Kerberos authorization information that did not reflect its current pilot-group membership.
+
+The ticket inspection confirmed the presence of a computer-account TGT but did not expose its Privilege Attribute Certificate (PAC) group memberships. Stale authorization information was therefore a working diagnosis, not a conclusively demonstrated ticket-content defect.
+
+#### 6.2.5 Purge the Local System Kerberos Ticket Cache
+
+On `WIN11-LAB001`, opened an elevated PowerShell session and executed:
+
+```powershell
+klist -li 0x3e7 purge
+```
+
+The command successfully purged the tickets associated with the Local System logon session.
+
+Restarted the workstation:
+
+```powershell
+Restart-Computer
+```
+
+After the restart, forced Group Policy processing and checked the applied policies:
+
+```powershell
+gpupdate /force
+gpresult /scope computer /r
+```
+
+**Result:** `LAB - USB Storage Restriction Pilot` now appeared alongside the existing workstation security baseline.
+
+![GPO Application Restored](screenshots/06-10-gpo-application-success.png)
+
+The result was consistent with the hypothesis that the computer's authentication or authorization state had not incorporated the updated group membership.
+
+Because the ticket purge and restart were performed together, the test did not establish which operation independently resolved the issue.
+
+#### 6.2.6 Root Cause Assessment and Lessons Learned
+
+**Most likely cause:** Stale computer-account Kerberos authorization information prevented the security-filtered GPO from applying despite correct Active Directory membership and GPO configuration.
+
+The investigation demonstrated several troubleshooting principles:
+
+1. **Directory membership and effective authorization are different.** A computer can belong to an AD security group while its existing authentication context does not yet reflect that membership.
+2. **Successful `gpupdate` execution does not guarantee a particular GPO applied.** Verify the result using `gpresult`.
+3. **Controlled configuration changes help isolate failures.** Temporarily granting `Authenticated Users` apply permission demonstrated that the GPO and OU link were functional.
+4. **Kerberos tickets are associated with logon sessions.** The Local System ticket cache can be inspected and targeted using `klist -li 0x3e7`.
+5. **Conclusions should match the available evidence.** The purge-and-restart sequence resolved the issue, but the original ticket's authorization contents were not captured.
+
+**Production consideration:** Ticket purges and workstation restarts can disrupt authentication sessions and active workloads. These actions should follow appropriate operational procedures.
+
+**Final outcome:** The USB restriction GPO successfully applied to `WIN11-LAB001` with the intended pilot-group security filtering restored.
+
+
+## 7. Lessons Learned So Far
 
 - DNS name resolution and IP routing solve different problems: a successful lookup does not guarantee connectivity.
 - A multihomed server can register addresses that are inappropriate for some client networks.
@@ -855,7 +1225,7 @@ The exercise demonstrated systematic troubleshooting across Windows Time, NTP, W
 - `-WhatIf` previews supported PowerShell changes, but does not prove a subsequent operation will succeed.
 - Verification should include checking that a configuration issue does not recur.
 
-## 7. Evidence and Documentation
+## 8. Evidence and Documentation
 
 Screenshots will be stored in a `screenshots/` subfolder and embedded inline alongside the relevant implementation or troubleshooting sections. This README will be updated as each stage is completed and verified.
 
