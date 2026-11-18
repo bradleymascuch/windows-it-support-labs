@@ -890,8 +890,6 @@ Get-ADGroup -Identity "GPO-USB-Restriction-Pilot" |
     Select-Object Name, GroupScope, GroupCategory, DistinguishedName
 ```
 
-![USB Pilot Security Group](screenshots/06-01-usb-pilot-security-group.png)
-
 #### 6.1.2 Add the Workstation to the Pilot Group
 
 Added the Windows 11 computer account to the security group:
@@ -907,7 +905,6 @@ Verified membership:
 ```powershell
 Get-ADGroupMember -Identity "GPO-USB-Restriction-Pilot" |
     Select-Object Name, SamAccountName, ObjectClass
-```
 
 The output confirmed that `WIN11-LAB001$` was a member of the pilot group with an object class of `computer`.
 
